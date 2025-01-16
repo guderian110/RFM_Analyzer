@@ -31,6 +31,27 @@ class RFMAnalyzer:
         self.error_msg = tk.Text(master, height=5, width=50)
         self.error_msg.pack()
 
+        # 添加自定义评分标准的输入框
+        self.r_label = tk.Label(master, text="R评分标准 (格式: min1-max1:score1,min2-max2:score2,...):")
+        self.r_label.pack()
+        self.r_entry = tk.Entry(master, width=50)
+        self.r_entry.pack()
+
+        self.f_label = tk.Label(master, text="F评分标准 (格式: min1-max1:score1,min2-max2:score2,...):")
+        self.f_label.pack()
+        self.f_entry = tk.Entry(master, width=50)
+        self.f_entry.pack()
+
+        self.m_label = tk.Label(master, text="M评分标准 (格式: min1-max1:score1,min2-max2:score2,...):")
+        self.m_label.pack()
+        self.m_entry = tk.Entry(master, width=50)
+        self.m_entry.pack()
+
+        self.compare_label = tk.Label(master, text="对比值 (格式: R,F,M):")
+        self.compare_label.pack()
+        self.compare_entry = tk.Entry(master, width=50)
+        self.compare_entry.pack()
+
     def upload_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx")])
         self.file_path = file_path
@@ -56,54 +77,49 @@ class RFMAnalyzer:
             self.error_msg.insert(tk.END, f"发生错误: {str(e)}")
     
     @staticmethod
-    def min_max_normalize(column):
-        return (column - column.min()) / (column.max() - column.min())
+    def parse_custom_scores(entry):
+        scores = entry.split(',')
+        score_dict = {}
+        for score in scores:
+            range_, value = score.split(':')
+            min_, max_ = map(int, range_.split('-'))
+            score_dict[(min_, max_)] = int(value)
+        return score_dict
 
     @staticmethod
-    def min_max_normalize_inverse(column):
-        return 1 - (column - column.min()) / (column.max() - column.min())
+    def apply_custom_scores(value, score_dict):
+        for (min_, max_), score in score_dict.items():
+            if min_ <= value <= max_:
+                return score
+        return 0
 
-    @staticmethod
-    def add_noise(column):
-        noise = np.random.uniform(0, 1e-9, size=column.shape)
-        return column + noise
-    
     def calculate_rfm(self, data):
-        # 减少鲸鱼玩家付费金额和付费频次的影响，使用对数转换来降低极端值影响
-        data[['monetary', 'frequency']] = np.log1p(data[['monetary', 'frequency']])
-        
-        # 对RFM进行归一化处理,其中R值需要进行逆向归一化
-        data['Normalized_Recency'] = self.min_max_normalize_inverse(data['recency'])
-        data['Normalized_Frequency'] = self.min_max_normalize(data['frequency'])
-        data['Normalized_Monetary'] = self.min_max_normalize(data['monetary'])
-        
-        # 增加微小的随机噪声以处理重复值
-        data['Normalized_Recency'] = self.add_noise(data['Normalized_Recency'])
-        data['Normalized_Frequency'] = self.add_noise(data['Normalized_Frequency'])
-        data['Normalized_Monetary'] = self.add_noise(data['Normalized_Monetary'])
-        
-        # 再次检查并处理仍然存在的重复值
-        while data.duplicated(['Normalized_Recency', 'Normalized_Frequency', 'Normalized_Monetary']).any():
-            data['Normalized_Recency'] = self.add_noise(data['Normalized_Recency'])
-            data['Normalized_Frequency'] = self.add_noise(data['Normalized_Frequency'])
-            data['Normalized_Monetary'] = self.add_noise(data['Normalized_Monetary'])
-        
-        rfm = pd.DataFrame()
-        
-        # 计算 RFM 每个维度的得分
-        rfm['R_Score'] = pd.qcut(data['Normalized_Recency'], 4, labels=[1, 2, 3, 4]).astype(int)
-        rfm['F_Score'] = pd.qcut(data['Normalized_Frequency'], 4, labels=[1, 2, 3, 4]).astype(int)
-        rfm['M_Score'] = pd.qcut(data['Normalized_Monetary'], 4, labels=[1, 2, 3, 4]).astype(int)
-        
+        # 获取用户自定义评分标准
+        r_scores = self.parse_custom_scores(self.r_entry.get())
+        f_scores = self.parse_custom_scores(self.f_entry.get())
+        m_scores = self.parse_custom_scores(self.m_entry.get())
+
+        # 计算 R、F、M 的得分
+        data['R_Score'] = data['recency'].apply(lambda x: self.apply_custom_scores(x, r_scores))
+        data['F_Score'] = data['frequency'].apply(lambda x: self.apply_custom_scores(x, f_scores))
+        data['M_Score'] = data['monetary'].apply(lambda x: self.apply_custom_scores(x, m_scores))
+
+        rfm = data[['role_id', 'R_Score', 'F_Score', 'M_Score']]
+
         # 计算 RFM 总分
-        rfm['RFM_Score'] = rfm['R_Score'].astype(int) + rfm['F_Score'].astype(int) + rfm['M_Score'].astype(int)
+        rfm['RFM_Score'] = rfm['R_Score'] + rfm['F_Score'] + rfm['M_Score']
         
         return rfm
 
     def segment_users(self, rfm_data):
-        avg_recency = rfm_data['R_Score'].mean()
-        avg_frequency = rfm_data['F_Score'].mean()
-        avg_monetary = rfm_data['M_Score'].mean()
+        # 获取用户输入的对比值
+        compare_values = self.compare_entry.get()
+        if compare_values:
+            avg_recency, avg_frequency, avg_monetary = map(int, compare_values.split(','))
+        else:
+            avg_recency = rfm_data['R_Score'].mean()
+            avg_frequency = rfm_data['F_Score'].mean()
+            avg_monetary = rfm_data['M_Score'].mean()
         
         # 定义用户分层函数
         def segment_customer(row):
