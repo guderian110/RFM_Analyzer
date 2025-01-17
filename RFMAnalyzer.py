@@ -25,6 +25,8 @@ class RFMAnalyzer:
         self.execute_btn.pack()
 
         self.error_msg = tk.Text(master, height=3, width=30)
+        self.error_msg.insert(tk.END,"这里是报错信息展示区域")
+        self.error_msg.config(state=tk.DISABLED)
         self.error_msg.pack()
 
         # 添加动态评分组管理
