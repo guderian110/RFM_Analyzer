@@ -7,6 +7,7 @@ import os
 class RFMAnalyzer:
     def __init__(self, master):
         self.master = master
+        self.button_identifiers = {}
         self.master.title("RFM 用户分层")
 
         self.label = tk.Label(master, text="导入 CSV/XLSX 文件:")
@@ -29,9 +30,11 @@ class RFMAnalyzer:
 
         self.canvas = tk.Canvas(self.scroll_frame)
         self.scrollbar = tk.Scrollbar(self.scroll_frame, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.scrollbarx = tk.Scrollbar(self.scroll_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.scrollbarx.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set,xscrollcommand=self.scrollbarx.set)
 
         self.inner_frame = tk.Frame(self.canvas)
         self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
@@ -43,21 +46,21 @@ class RFMAnalyzer:
         self.error_msg.pack()
 
         # 动态评分组管理
-        self.score_frames = {'R': self.create_score_group(self.inner_frame, "R评分标准"),
-                             'F': self.create_score_group(self.inner_frame, "F评分标准"),
-                             'M': self.create_score_group(self.inner_frame, "M评分标准")}
+        self.score_frames = {'R': self.create_score_group(self.inner_frame, "R评分标准","R"),
+                             'F': self.create_score_group(self.inner_frame, "F评分标准","F"),
+                             'M': self.create_score_group(self.inner_frame, "M评分标准", "M")}
 
         self.load_param_btn = tk.Button(self.inner_frame, text="加载参数文件", command=self.load_params)
         self.load_param_btn.pack()
 
         self.compare_label = tk.Label(self.inner_frame, text="对比值 (格式: R,F,M):")
-        self.compare_label.pack()
+        self.compare_label.pack(pady=10)
         self.compare_entry = tk.Entry(self.inner_frame, width=50)
-        self.compare_entry.pack()
+        self.compare_entry.pack(pady=10)
 
         self.file_path = ""
 
-    def create_score_group(self, master, label_text):
+    def create_score_group(self, master, label_text, group_key):
         group_frame = tk.Frame(master)
         group_frame.pack(pady=5)
 
@@ -67,13 +70,13 @@ class RFMAnalyzer:
         btn_add = tk.Button(group_frame, text="+", command=lambda: self.add_score_group(group_frame))
         btn_add.pack(side=tk.LEFT)
 
-        btn_remove = tk.Button(group_frame, text="-", command=lambda: self.remove_score_group(group_frame))
+        btn_remove = tk.Button(group_frame, text="-", command=lambda: self.remove_score_group(group_frame, group_key))
         btn_remove.pack(side=tk.LEFT)
 
-        frame = tk.Frame(master)
-        frame.pack()
-
-        return frame
+        # 存储每个组的“减少”按钮引用
+        self.button_identifiers[group_key] = btn_remove
+        
+        return group_frame
 
     def upload_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx")])
@@ -122,9 +125,13 @@ class RFMAnalyzer:
             entries["min"].configure(state="normal")
             entries["max"].configure(state="normal")
 
-    def remove_score_group(self, frame):
+    def remove_score_group(self, frame, group_key):
         if len(frame.winfo_children()) > 0:
-            frame.winfo_children()[-1].destroy()
+            last_widget = frame.winfo_children()[-1]
+            # 检查是否是该组的“减少”按钮
+            if last_widget != self.button_identifiers[group_key]:
+                last_widget.destroy()
+
 
     def load_params(self):
         file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
