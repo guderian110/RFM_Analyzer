@@ -3,86 +3,158 @@ import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import filedialog, ttk
 import os
+from tkinter import messagebox
+
 
 class RFMAnalyzer:
     def __init__(self, master):
         self.master = master
-        self.master.title("RFM 用户分层")
+        self.master.title("RFM 用户分层分析系统")
+        self.master.geometry("1000x800")
+        self.master.configure(bg="#f0f3f5")
 
-        self.label = tk.Label(master, text="导入 CSV/XLSX 文件:")
-        self.label.pack()
+        # 样式配置
+        self.style = ttk.Style()
+        self.style.theme_use("clam")
+        self.configure_styles()
+        
+        # 主容器
+        self.main_frame = ttk.Frame(master)
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        self.upload_btn = tk.Button(master, text="上传文件", command=self.upload_file)
-        self.upload_btn.pack()
+        # 顶部操作区
+        self.create_top_panel()
+        
+        # 分析结果显示区
+        self.create_result_panel()
+        
+        # 参数设置区
+        self.create_parameter_panel()
 
-        self.segment_var = tk.StringVar(master)
-        self.segment_options = ["RFM用户组别频次图", "RFM描述分析"]
-        self.segment_menu = ttk.OptionMenu(master, self.segment_var, self.segment_options[0], *self.segment_options)
-        self.segment_menu.pack()
-
-        self.execute_btn = tk.Button(master, text="执行分析", command=self.analyze_data)
-        self.execute_btn.pack()
-
-        # 滚动区域容器
-        self.scroll_frame = tk.Frame(master)
-        self.scroll_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.canvas = tk.Canvas(self.scroll_frame)
-        self.scrollbar = tk.Scrollbar(self.scroll_frame, orient=tk.VERTICAL, command=self.canvas.yview)
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.inner_frame = tk.Frame(self.canvas)
-        self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
-        self.inner_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-
-        # 错误消息框
-        self.error_msg = tk.Text(self.inner_frame, height=3, width=50)
-        self.error_msg.insert(tk.END, "这里是报错信息展示区域")
-        self.error_msg.pack()
-
-        # 动态评分组管理
-        self.score_frames = {'R': self.create_score_group(self.inner_frame, "R评分标准"),
-                             'F': self.create_score_group(self.inner_frame, "F评分标准"),
-                             'M': self.create_score_group(self.inner_frame, "M评分标准")}
-
-        self.load_param_btn = tk.Button(self.inner_frame, text="加载参数文件", command=self.load_params)
-        self.load_param_btn.pack()
-
-        self.compare_label = tk.Label(self.inner_frame, text="对比值 (格式: R,F,M):")
-        self.compare_label.pack(pady=10)
-        self.compare_entry = tk.Entry(self.inner_frame, width=50)
-        self.compare_entry.pack(pady=10)
-
+        # 初始化变量
         self.file_path = ""
+        self.current_params = {"R": {}, "F": {}, "M": {}}
 
-    def create_score_group(self, master, label_text):
-        group_frame = tk.Frame(master)
-        group_frame.pack(pady=5)
+    def configure_styles(self):
+        # 自定义样式
+        self.style.configure("TButton", padding=6, font=("微软雅黑", 10))
+        self.style.configure("TLabel", font=("微软雅黑", 10), background="#f0f3f5")
+        self.style.configure("Header.TLabel", font=("微软雅黑", 12, "bold"))
+        self.style.configure("Section.TFrame", background="#ffffff", relief=tk.RIDGE, borderwidth=2)
+        self.style.configure("Error.TLabel", foreground="#dc3545", font=("微软雅黑", 9))
+        self.style.map("Accent.TButton",
+                      foreground=[("active", "#ffffff"), ("!disabled", "#ffffff")],
+                      background=[("active", "#0062cc"), ("!disabled", "#007bff")])
+        
+    def create_top_panel(self):
+        # 顶部操作面板
+        top_frame = ttk.Frame(self.main_frame, style="Section.TFrame")
+        top_frame.pack(fill=tk.X, pady=(0, 15))
 
-        label = tk.Label(group_frame, text=label_text)
-        label.pack(side=tk.LEFT)
+        # 文件上传区
+        upload_frame = ttk.Frame(top_frame)
+        upload_frame.pack(pady=10, padx=10, fill=tk.X)
+        
+        ttk.Label(upload_frame, text="数据文件:", style="Header.TLabel").pack(side=tk.LEFT)
+        self.upload_btn = ttk.Button(upload_frame, text="选择文件", style="Accent.TButton", command=self.upload_file)
+        self.upload_btn.pack(side=tk.LEFT, padx=10)
+        self.file_label = ttk.Label(upload_frame, text="未选择文件", foreground="#6c757d")
+        self.file_label.pack(side=tk.LEFT)
 
-        btn_add = tk.Button(group_frame, text="+", command=lambda: self.add_score_group(group_frame))
-        btn_add.pack(side=tk.LEFT)
+        # 分析控制区
+        ctrl_frame = ttk.Frame(top_frame)
+        ctrl_frame.pack(pady=10, padx=10, fill=tk.X)
+        
+        ttk.Label(ctrl_frame, text="分析类型:").pack(side=tk.LEFT)
+        self.segment_var = tk.StringVar()
+        self.segment_menu = ttk.OptionMenu(ctrl_frame, self.segment_var, "RFM用户组别频次图", 
+                                          "RFM用户组别频次图", "RFM描述分析")
+        self.segment_menu.pack(side=tk.LEFT, padx=10)
+        
+        self.analyze_btn = ttk.Button(ctrl_frame, text="开始分析", style="Accent.TButton", command=self.analyze_data)
+        self.analyze_btn.pack(side=tk.RIGHT)    
+    def create_result_panel(self):
+        # 结果展示面板
+        result_frame = ttk.Frame(self.main_frame, style="Section.TFrame")
+        result_frame.pack(fill=tk.BOTH, expand=True)
 
-        btn_remove = tk.Button(group_frame, text="-", command=lambda: self.remove_score_group(group_frame))
-        btn_remove.pack(side=tk.LEFT)
+        # 错误提示
+        self.error_label = ttk.Label(result_frame, text="", style="Error.TLabel")
+        self.error_label.pack(pady=5)
 
-        frame = tk.Frame(master)
-        frame.pack()
+        # 带滚动条的画布
+        self.canvas = tk.Canvas(result_frame, bg="white", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(result_frame, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
 
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.param_frame = ttk.Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.param_frame, anchor="nw")
+
+        self.param_frame.bind("<Configure>", lambda e: self.canvas.configure(
+            scrollregion=self.canvas.bbox("all")))
+
+    def create_parameter_panel(self):
+        # 参数设置面板
+        param_container = ttk.Frame(self.param_frame)
+        param_container.pack(pady=10, padx=10, fill=tk.X)
+
+        # 评分标准设置
+        score_frame = ttk.LabelFrame(param_container, text="评分标准设置", padding=(10, 5))
+        score_frame.pack(fill=tk.X, pady=5)
+        
+        self.score_frames = {
+            'R': self.create_score_group(score_frame, "最近消费间隔（R）"),
+            'F': self.create_score_group(score_frame, "消费频率（F）"),
+            'M': self.create_score_group(score_frame, "消费金额（M）")
+        }
+
+        # 参数管理
+        param_btn_frame = ttk.Frame(score_frame)
+        param_btn_frame.pack(pady=10)
+        
+        ttk.Button(param_btn_frame, text="加载参数", command=self.load_params).pack(side=tk.LEFT, padx=5)
+        # ttk.Button(param_btn_frame, text="保存参数", command=self.save_params).pack(side=tk.LEFT, padx=5)
+
+        # 对比值设置
+        compare_frame = ttk.Frame(param_container)
+        compare_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(compare_frame, text="基准值设置（R,F,M）:").pack(side=tk.LEFT)
+        self.compare_entry = ttk.Entry(compare_frame, width=20)
+        self.compare_entry.pack(side=tk.LEFT, padx=10)
+        ttk.Label(compare_frame, text="示例：30,5,1000", foreground="#6c757d").pack(side=tk.LEFT)
+
+    def create_score_group(self, parent, title):
+        frame = ttk.LabelFrame(parent, text=title, padding=(10, 5))
+        frame.pack(fill=tk.X, pady=5, padx=5)
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(pady=5)
+        
+        ttk.Button(btn_frame, text="+ 添加条件", command=lambda: self.add_score_group(frame)).pack(side=tk.LEFT)
+        ttk.Button(btn_frame, text="- 删除条件", command=lambda: self.remove_score_group(frame)).pack(side=tk.LEFT)
+        
         return frame
 
+        return group_frame
+    def show_error(self, message):
+        self.error_label.config(text=message)
+        self.master.after(5000, lambda: self.error_label.config(text=""))  # 5秒后自动清除错误信息
+
     def upload_file(self):
-        file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx")])
+        file_path = filedialog.askopenfilename(
+            filetypes=[("数据文件", "*.csv *.xlsx")],
+            title="选择数据文件"
+        )
         if file_path:
             self.file_path = file_path
-            self.label.config(text=f"已上传: {os.path.basename(file_path)}")
-
+            self.file_label.config(text=os.path.basename(file_path))
+            self.show_error("")  # 清除旧错误信息
     def add_score_group(self, frame):
-        group_frame = tk.Frame(frame)
+        group_frame = ttk.Frame(frame)
         group_frame.pack(pady=5)
 
         type_var = tk.StringVar(value="区间")
@@ -90,19 +162,19 @@ class RFMAnalyzer:
                                     command=lambda x: self.update_group_fields(group_frame, type_var))
         type_menu.pack(side=tk.LEFT)
 
-        min_entry = tk.Entry(group_frame, width=5)
+        min_entry = ttk.Entry(group_frame, width=5)
         min_entry.pack(side=tk.LEFT)
 
-        spacer = tk.Label(group_frame, text="到")
+        spacer = ttk.Label(group_frame, text="到")
         spacer.pack(side=tk.LEFT)
 
-        max_entry = tk.Entry(group_frame, width=5)
+        max_entry = ttk.Entry(group_frame, width=5)
         max_entry.pack(side=tk.LEFT)
 
-        score_label = tk.Label(group_frame, text="Score:")
+        score_label = ttk.Label(group_frame, text="Score:")
         score_label.pack(side=tk.LEFT)
 
-        score_entry = tk.Entry(group_frame, width=5)
+        score_entry = ttk.Entry(group_frame, width=5)
         score_entry.pack(side=tk.LEFT)
 
         group_frame.entries = {"type": type_var, "min": min_entry, "max": max_entry, "score": score_entry}
@@ -122,9 +194,13 @@ class RFMAnalyzer:
             entries["min"].configure(state="normal")
             entries["max"].configure(state="normal")
 
-    def remove_score_group(self, frame):
-        if len(frame.winfo_children()) > 0:
-            frame.winfo_children()[-1].destroy()
+    def remove_score_group(self, parent_frame):
+        # 获取所有子组件（排除按钮框架）
+        children = [child for child in parent_frame.winfo_children() if not isinstance(child, ttk.Frame)]
+        
+        # 删除最后一个条件条目
+        if len(children) > 0:
+            children[-1].destroy()
 
     def load_params(self):
         file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
@@ -177,7 +253,7 @@ class RFMAnalyzer:
                 child.destroy()
 
     def add_param_to_frame(self, frame, score_type, min_val, max_val, score_val):
-        group_frame = tk.Frame(frame)
+        group_frame = ttk.Frame(frame)
         group_frame.pack(pady=5)
 
         type_var = tk.StringVar(value=score_type)
@@ -185,23 +261,23 @@ class RFMAnalyzer:
                                    command=lambda x: self.update_group_fields(group_frame, type_var))
         type_menu.pack(side=tk.LEFT)
 
-        min_entry = tk.Entry(group_frame, width=5)
+        min_entry = ttk.Entry(group_frame, width=5)
         if min_val is not None:
             min_entry.insert(0, str(min_val))
         min_entry.pack(side=tk.LEFT)
 
-        spacer = tk.Label(group_frame, text="到")
+        spacer = ttk.Label(group_frame, text="到")
         spacer.pack(side=tk.LEFT)
 
-        max_entry = tk.Entry(group_frame, width=5)
+        max_entry = ttk.Entry(group_frame, width=5)
         if max_val is not None:
             max_entry.insert(0, str(max_val))
         max_entry.pack(side=tk.LEFT)
 
-        score_label = tk.Label(group_frame, text="Score:")
+        score_label = ttk.Label(group_frame, text="Score:")
         score_label.pack(side=tk.LEFT)
 
-        score_entry = tk.Entry(group_frame, width=5)
+        score_entry = ttk.Entry(group_frame, width=5)
         score_entry.insert(0, str(score_val))
         score_entry.pack(side=tk.LEFT)
 
@@ -229,9 +305,6 @@ class RFMAnalyzer:
                 self.show_error("无效的输入: 请确保所有评分字段为整数。")
                 continue
 
-        # 确保 score_dict 中的所有值都是 int
-        score_dict = {k: int(v) for k, v in score_dict.items()}
-
         return score_dict
 
     def analyze_data(self):
@@ -244,7 +317,6 @@ class RFMAnalyzer:
             f_scores = self.get_score_groups(self.score_frames['F'])
             m_scores = self.get_score_groups(self.score_frames['M'])
 
-            # 检查评分标准是否填写
             if not (r_scores and f_scores and m_scores):
                 self.show_error("R、F、M评分标准为必填项，请填写所有评分标准。")
                 return
@@ -252,10 +324,8 @@ class RFMAnalyzer:
             data = self.load_data(self.file_path)
             data = data[['role_id', 'recency', 'frequency', 'monetary']]
 
-            # 执行 RFM 分析
             rfm_data = self.calculate_rfm(data, r_scores, f_scores, m_scores)
 
-            # 获取对比值，若未填写则使用分数的平均值
             compare_values = self.compare_entry.get()
             avg_recency = rfm_data['R_Score'].mean()
             avg_frequency = rfm_data['F_Score'].mean()
@@ -307,14 +377,13 @@ class RFMAnalyzer:
 
     def calculate_rfm(self, data, r_scores, f_scores, m_scores):
         try:
-            # 计算 R、F、M 的得分
             data['R_Score'] = data['recency'].apply(lambda x: self.apply_custom_scores(x, r_scores, reverse=True))
             data['F_Score'] = data['frequency'].apply(lambda x: self.apply_custom_scores(x, f_scores))
             data['M_Score'] = data['monetary'].apply(lambda x: self.apply_custom_scores(x, m_scores))
 
             rfm = data[['role_id', 'R_Score', 'F_Score', 'M_Score']].copy()
             rfm['RFM_Score'] = rfm['R_Score'] + rfm['F_Score'] + rfm['M_Score']
-            
+
             return rfm
         except Exception as e:
             self.show_error(f"计算 RFM 分数时发生错误: {str(e)}")
@@ -325,7 +394,6 @@ class RFMAnalyzer:
             rfm_data = rfm_data.copy()
             rfm_data['Segment'] = rfm_data.apply(self.define_segment, axis=1, args=(avg_recency, avg_frequency, avg_monetary))
 
-            # 根据选择的图表类型执行相应逻辑
             selected_option = self.segment_var.get()
             if selected_option == "RFM用户组别频次图":
                 self.generate_frequency_chart(rfm_data)
@@ -363,13 +431,11 @@ class RFMAnalyzer:
             total_count = len(rfm_data)
             segment_percentages = (segment_counts / total_count) * 100
 
-            # 绘制频次图
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.bar(segment_counts.index, segment_counts.values, color='skyblue', alpha=0.7)
             ax.set_ylabel('频率')
             ax.set_title('RFM 用户组别频次图')
 
-            # 添加频次和占比标签
             for i, count in enumerate(segment_counts):
                 percentage = segment_percentages.iloc[i]
                 ax.text(i, count, f'{count} ({percentage:.2f}%)', ha='center', va='bottom')
@@ -377,14 +443,14 @@ class RFMAnalyzer:
             plt.xticks(rotation=45)
             plt.tight_layout()
 
-            # 设置字体以支持中文
-            plt.rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
-            plt.rcParams['axes.unicode_minus'] = False  # 正常显示负号
+            plt.rcParams['font.sans-serif'] = ['SimHei']
+            plt.rcParams['axes.unicode_minus'] = False
 
             plt.show()
         except Exception as e:
             self.show_error(f"生成频次图时发生错误: {str(e)}")
             raise
+
 
 if __name__ == "__main__":
     root = tk.Tk()
